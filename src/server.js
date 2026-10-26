@@ -133,6 +133,12 @@ function stripAnsi(value) {
     .replace(/\x1b\[[\x20-\x3f]*[\x40-\x7e]/g, "");
 }
 
+function formatCmdOutput(output, max = 4000) {
+  const text = stripAnsi(output ?? "").trim();
+  if (!text) return "(no output)";
+  return text.length > max ? `${text.slice(0, max)}…(truncated)` : text;
+}
+
 let deviceBootstrapSdkPromise = null;
 
 function resolveDeviceBootstrapSdkPath() {
@@ -254,7 +260,10 @@ async function syncAllowedOrigins() {
   if (result.code === 0) {
     log.info("gateway", `set allowedOrigins to [${origin}]`);
   } else {
-    log.warn("gateway", `failed to set allowedOrigins (exit=${result.code})`);
+    log.warn(
+      "gateway",
+      `failed to set allowedOrigins (exit=${result.code}): ${formatCmdOutput(result.output)}`,
+    );
   }
 }
 
@@ -264,6 +273,12 @@ async function syncTrustedProxies() {
     OPENCLAW_NODE,
     clawArgs(["config", "get", "gateway.trustedProxies"]),
   );
+  if (current.code !== 0) {
+    log.warn(
+      "gateway",
+      `failed to read gateway.trustedProxies (exit=${current.code}): ${formatCmdOutput(current.output)}`,
+    );
+  }
 
   try {
     if (
@@ -286,7 +301,11 @@ async function syncTrustedProxies() {
     ]),
   );
   if (result.code !== 0) {
-    throw new Error(`Failed to set gateway.trustedProxies (exit=${result.code})`);
+    log.warn(
+      "gateway",
+      `failed to set gateway.trustedProxies (exit=${result.code}): ${formatCmdOutput(result.output)}`,
+    );
+    return;
   }
   log.info("gateway", `set trustedProxies to ${JSON.stringify(expected)}`);
 }
@@ -490,8 +509,22 @@ async function ensureGatewayRunning() {
   }
   if (!gatewayStarting) {
     gatewayStarting = (async () => {
-      await syncTrustedProxies();
-      await syncAllowedOrigins();
+      try {
+        await syncTrustedProxies();
+      } catch (err) {
+        log.warn(
+          "gateway",
+          `syncTrustedProxies failed, continuing: ${err?.message || String(err)}`,
+        );
+      }
+      try {
+        await syncAllowedOrigins();
+      } catch (err) {
+        log.warn(
+          "gateway",
+          `syncAllowedOrigins failed, continuing: ${err?.message || String(err)}`,
+        );
+      }
       await startGateway();
       const ready = await waitForGatewayReady({ timeoutMs: 60_000 });
       if (!ready) {

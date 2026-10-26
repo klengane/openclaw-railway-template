@@ -20,6 +20,7 @@ RUN npm install -g \
   && node --version | grep -Eq '^v26\.' \
   && openclaw --version | grep -Eq '^OpenClaw 2026\.10\.6( |$)'
 RUN npm install -g clawhub@latest
+RUN npm install -g @anthropic-ai/claude-code
 
 WORKDIR /app
 
